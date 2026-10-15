@@ -175,12 +175,22 @@
   </div>
 
   <div class="card">
-    <div class="small-label">命令行查询（在任何机器上获取家庭公网 IP）</div>
+    <div class="small-label">命令行查询①：家庭网络公网 IP（路由器上报值）</div>
     <div style="position:relative">
       <pre id="cliCmd" style="margin:0">curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</pre>
-      <button class="copy-btn" onclick="copyCmd()">复制</button>
+      <button class="copy-btn" onclick="copyCmd('cliCmd')">复制</button>
     </div>
-    <div class="ip-hint" style="margin-top:8px">PowerShell（Windows）：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>返回纯文本，效果与 <code>iwr ifconfig.me/ip</code> 一致，可直接写进脚本变量</div>
+    <div class="ip-hint" style="margin-top:8px">PowerShell（Windows）：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>返回纯文本，可直接写进脚本变量</div>
+
+    <div class="small-label" style="margin-top:18px">命令行查询②：你自己（执行命令的设备）的公网 IP</div>
+    <div style="position:relative">
+      <pre id="cliCmd2" style="margin:0">curl -s https://api-ipv4.ip.sb/ip</pre>
+      <button class="copy-btn" onclick="copyCmd('cliCmd2')">复制</button>
+    </div>
+    <div class="ip-hint" style="margin-top:8px">返回的是「执行命令的这台设备」当前使用的出口 IP（例如手机流量、公司宽带的 IP），<b>不是</b>家庭网络的 IP，可与查询①对比判断自己是否在家庭网络内。<br>
+    备选源：<code>curl -s ifconfig.me/ip</code>、<code>curl -s checkip.amazonaws.com</code>、<code>curl -s ipv4.icanhazip.com</code><br>
+    PowerShell：<code>iwr https://api-ipv4.ip.sb/ip</code></div>
+    <div class="ip-hint">注：GitHub Pages 为纯静态托管，无法自建「回显访问者 IP」的接口；如将来需要自有域名的 IP 回显服务，可参考 <b>mpolden/echoip</b>（开源，ifconfig.co 同款）或一个 3 行代码的 Cloudflare Worker。</div>
   </div>
 
   <div class="card">
@@ -199,6 +209,8 @@
         <code>curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>
         Windows PowerShell：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>
         可设置别名方便日常使用，例如在 <code>.bashrc</code> 中加 <code>alias homeip="curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt"</code>。</p>
+        <h3>查询访问者自己的公网 IP</h3>
+        <p>使用公共 IP 回显服务（服务端回显请求来源，静态托管无法自建该能力）：<code>curl -s https://api-ipv4.ip.sb/ip</code>，备选 <code>curl -s ifconfig.me/ip</code>、<code>curl -s checkip.amazonaws.com</code>。返回的是执行命令的设备的出口 IP，可与家庭 IP 对比判断自己是否在内网。</p>
         <h3>路由器脚本（OpenWrt / 梅林等支持 cron + curl 的固件）</h3>
         <pre id="scriptBox">见仓库 router/report-ip.sh（推荐，含历史记录，需 jq）或 router/report-ip-simple.sh（无依赖精简版）</pre>
         <h3>配置 crontab（每 10 分钟上报一次）</h3>
@@ -375,8 +387,8 @@ function showToast(msg) {
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 1500);
 }
-function copyCmd() {
-  const cmd = document.getElementById("cliCmd").textContent;
+function copyCmd(id) {
+  const cmd = document.getElementById(id || "cliCmd").textContent;
   (navigator.clipboard ? navigator.clipboard.writeText(cmd) : Promise.reject())
     .then(() => showToast("命令已复制"))
     .catch(() => showToast("复制失败，请手动选择复制"));
