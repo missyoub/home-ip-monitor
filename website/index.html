@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家庭公网 IP 监控</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --border: #e5e7eb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 24px; }
+  header h1 { font-size: 22px; font-weight: 700; }
+  header p { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .label { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: 0.5px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge.ok { background: #dcfce7; color: var(--green); }
+  .badge.ok .dot { background: var(--green); }
+  .badge.stale { background: #fef3c7; color: var(--amber); }
+  .badge.stale .dot { background: var(--amber); }
+  .badge.none { background: #fee2e2; color: var(--red); }
+  .badge.none .dot { background: var(--red); }
+  .ip-box {
+    text-align: center;
+    padding: 8px 0 4px;
+  }
+  .ip-value {
+    font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 40px; font-weight: 700;
+    color: var(--accent);
+    cursor: pointer;
+    word-break: break-all;
+    transition: opacity 0.15s;
+    user-select: all;
+  }
+  .ip-value:hover { opacity: 0.8; }
+  .ip-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .meta-row {
+    display: flex; justify-content: center; gap: 24px;
+    margin-top: 14px; flex-wrap: wrap;
+  }
+  .meta-item { text-align: center; }
+  .meta-item .k { font-size: 11px; color: var(--muted); }
+  .meta-item .v { font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .refresh-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; margin-top: 16px;
+  }
+  button.refresh {
+    background: var(--accent); color: #fff;
+    border: none; border-radius: 8px;
+    padding: 8px 20px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  button.refresh:hover { opacity: 0.85; }
+  button.refresh:disabled { opacity: 0.5; cursor: wait; }
+  .countdown { font-size: 12px; color: var(--muted); }
+  .small-label { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .visitor-ip {
+    font-family: Consolas, monospace;
+    font-size: 20px; font-weight: 700; color: var(--text);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 600;
+    padding: 8px 6px; border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  td { padding: 8px 6px; border-bottom: 1px solid #f3f4f6; }
+  td.ip { font-family: Consolas, monospace; font-weight: 600; }
+  tr.changed td.ip { color: var(--red); }
+  tr.changed .chg { color: var(--red); font-size: 11px; font-weight: 700; margin-left: 6px; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
+  .error { color: var(--red); font-size: 13px; text-align: center; padding: 12px 0; }
+  details { margin-top: 4px; }
+  summary {
+    cursor: pointer; font-size: 14px; font-weight: 700;
+    color: var(--accent); padding: 4px 0;
+  }
+  details .doc { font-size: 13px; line-height: 1.8; color: var(--text); }
+  details .doc h3 { font-size: 13px; margin: 14px 0 6px; color: var(--text); }
+  details .doc p { margin-bottom: 8px; }
+  pre {
+    background: #0f172a; color: #e2e8f0;
+    border-radius: 10px; padding: 14px;
+    font-size: 12px; line-height: 1.6;
+    overflow-x: auto; margin: 8px 0;
+    font-family: Consolas, "Courier New", monospace;
+  }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
+    background: #1f2937; color: #fff;
+    padding: 8px 18px; border-radius: 999px;
+    font-size: 13px; opacity: 0; pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .toast.show { opacity: 1; }
+  .copy-btn {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(255,255,255,0.15); color: #e2e8f0;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px; padding: 3px 10px;
+    font-size: 11px; cursor: pointer;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.28); }
+  code {
+    background: #eef1f6; border-radius: 4px;
+    padding: 1px 5px; font-size: 12px;
+    font-family: Consolas, monospace;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🏠 家庭公网 IP 监控</h1>
+    <p>数据由家庭路由器定时上报 · 每 60 秒自动刷新</p>
+  </header>
+
+  <div class="card">
+    <div class="status-row">
+      <span class="label">家庭网络当前公网 IP</span>
+      <span id="statusBadge" class="badge none"><span class="dot"></span><span id="statusText">加载中</span></span>
+    </div>
+    <div class="ip-box">
+      <div class="ip-value" id="homeIp" title="点击复制">--</div>
+      <div class="ip-hint">点击 IP 可复制</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-item"><div class="k">最后上报时间</div><div class="v" id="lastTime">--</div></div>
+      <div class="meta-item"><div class="k">距今</div><div class="v" id="relTime">--</div></div>
+    </div>
+    <div class="refresh-row">
+      <button class="refresh" id="refreshBtn" onclick="refresh(true)">立即刷新</button>
+      <span class="countdown" id="countdown"></span>
+    </div>
+    <div class="error" id="errBox" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <div class="small-label">你当前访问本页使用的出口 IP（用于对比）</div>
+    <div class="visitor-ip" id="visitorIp">检测中…</div>
+  </div>
+
+  <div class="card">
+    <div class="small-label">命令行查询（在任何机器上获取家庭公网 IP）</div>
+    <div style="position:relative">
+      <pre id="cliCmd" style="margin:0">curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</pre>
+      <button class="copy-btn" onclick="copyCmd()">复制</button>
+    </div>
+    <div class="ip-hint" style="margin-top:8px">PowerShell（Windows）：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>返回纯文本，效果与 <code>iwr ifconfig.me/ip</code> 一致，可直接写进脚本变量</div>
+  </div>
+
+  <div class="card">
+    <div class="small-label">上报历史（最近 100 条）</div>
+    <div id="historyBox"><div class="empty">暂无历史记录</div></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>📖 使用说明 / 路由器配置教程</summary>
+      <div class="doc">
+        <h3>工作原理</h3>
+        <p>路由器通过 cron 定时执行脚本：先从公网 IP 服务获取本机出口 IP，再通过 GitHub API 把 IP 写入一个私有 Gist；本页面（GitHub Pages 静态托管）读取该 Gist 并展示。全程无需自建服务器。</p>
+        <h3>命令行查询说明</h3>
+        <p>GitHub Pages 是纯静态托管，无法在页面路径上动态返回数据，因此命令行查询直接读取同一个 Gist 的纯文本文件（与页面数据同源、实时一致）：<br>
+        <code>curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>
+        Windows PowerShell：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>
+        可设置别名方便日常使用，例如在 <code>.bashrc</code> 中加 <code>alias homeip="curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt"</code>。</p>
+        <h3>路由器脚本（OpenWrt / 梅林等支持 cron + curl 的固件）</h3>
+        <pre id="scriptBox">见仓库 router/report-ip.sh（推荐，含历史记录，需 jq）或 router/report-ip-simple.sh（无依赖精简版）</pre>
+        <h3>配置 crontab（每 10 分钟上报一次）</h3>
+        <pre>*/10 * * * * /root/report-ip.sh &gt;/dev/null 2&gt;&amp;1</pre>
+        <h3>注意事项</h3>
+        <p>1. 路由器脚本中的 GitHub Token 建议使用<b>仅勾选 gist 权限</b>的独立 classic token，不要使用部署仓库用的 token。<br>
+        2. Gist 为秘密可见（secret），仅凭 ID 可访问；如担心 IP 泄露，请勿向他人透露本页地址。<br>
+        3. Gist raw 内容有约 5 分钟 CDN 缓存，页面显示的「最后上报时间」以数据本身为准。<br>
+        4. 判定规则：超过 <b>30 分钟</b>无上报会显示「未按时上报」警告（对应每 10 分钟一次的上报频率）。</p>
+      </div>
+    </details>
+  </div>
+
+  <footer>Powered by GitHub Pages · 数据存储于 GitHub Gist</footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ====== 部署时自动替换 ======
+const CONFIG = {
+  RAW_URL: "https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.json",
+  RAW_TXT: "https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt",
+  GIST_ID: "b9eef32f878cf1829591bc338bf2a26c",   // Gist ID（API 兜底用）
+  STALE_MINUTES: 30         // 超过该分钟数未上报则告警
+};
+// ===========================
+
+const REFRESH_SEC = 60;
+let countdown = REFRESH_SEC;
+
+function fmtTime(s) {
+  if (!s) return "--";
+  const d = new Date(s.includes("UTC") ? s.replace(" UTC", "Z") : s.replace(" ", "T"));
+  if (isNaN(d)) return s;
+  return d.toLocaleString("zh-CN", { hour12: false });
+}
+function relTime(s) {
+  if (!s) return "--";
+  const d = new Date(s.includes("UTC") ? s.replace(" UTC", "Z") : s.replace(" ", "T"));
+  if (isNaN(d)) return "--";
+  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diff < 60) return diff + " 秒前";
+  if (diff < 3600) return Math.floor(diff / 60) + " 分钟前";
+  if (diff < 86400) return Math.floor(diff / 3600) + " 小时前";
+  return Math.floor(diff / 86400) + " 天前";
+}
+function ageSeconds(s) {
+  const d = new Date(s.includes("UTC") ? s.replace(" UTC", "Z") : s.replace(" ", "T"));
+  if (isNaN(d)) return Infinity;
+  return (Date.now() - d.getTime()) / 1000;
+}
+
+async function loadData() {
+  try {
+    const r = await fetch(CONFIG.RAW_URL + "?t=" + Date.now(), { cache: "no-store" });
+    if (r.ok) return await r.json();
+  } catch (e) { /* fallthrough */ }
+  const r2 = await fetch("https://api.github.com/gists/" + CONFIG.GIST_ID + "?t=" + Date.now(), { cache: "no-store" });
+  if (!r2.ok) throw new Error("GitHub API " + r2.status);
+  const g = await r2.json();
+  const f = g.files && g.files["ip.json"];
+  if (!f) throw new Error("Gist 中未找到 ip.json");
+  return JSON.parse(f.content);
+}
+
+function setStatus(ok, text) {
+  const b = document.getElementById("statusBadge");
+  b.className = "badge " + ok;
+  document.getElementById("statusText").textContent = text;
+}
+
+function render(data) {
+  const latest = data && (data.latest || (Array.isArray(data) ? data[0] : null));
+  const history = (data && data.history) || (Array.isArray(data) ? data : []);
+  const box = document.getElementById("errBox");
+  box.style.display = "none";
+
+  if (!latest || !latest.ip) {
+    document.getElementById("homeIp").textContent = "暂无数据";
+    setStatus("none", "等待首次上报");
+    document.getElementById("lastTime").textContent = "--";
+    document.getElementById("relTime").textContent = "--";
+    renderHistory([]);
+    return;
+  }
+  document.getElementById("homeIp").textContent = latest.ip;
+  document.getElementById("lastTime").textContent = fmtTime(latest.time);
+  document.getElementById("relTime").textContent = relTime(latest.time);
+  const age = ageSeconds(latest.time);
+  if (age < CONFIG.STALE_MINUTES * 60) {
+    setStatus("ok", "正常上报");
+  } else if (age < 24 * 3600) {
+    setStatus("stale", "未按时上报（IP 可能已变更）");
+  } else {
+    setStatus("none", "长时间无上报");
+  }
+  renderHistory(history);
+}
+
+function renderHistory(history) {
+  const box = document.getElementById("historyBox");
+  if (!history || !history.length) {
+    box.innerHTML = '<div class="empty">暂无历史记录</div>';
+    return;
+  }
+  let html = '<table><thead><tr><th style="width:55%">时间</th><th>公网 IP</th></tr></thead><tbody>';
+  history.forEach((h, i) => {
+    const changed = i > 0 && history[i - 1] && history[i - 1].ip !== h.ip;
+    html += '<tr' + (changed ? ' class="changed"' : '') + '><td>' + fmtTime(h.time) +
+            '</td><td class="ip">' + h.ip + (changed ? '<span class="chg">已变更</span>' : '') + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+
+async function refresh(manual) {
+  const btn = document.getElementById("refreshBtn");
+  btn.disabled = true;
+  try {
+    const data = await loadData();
+    render(data);
+  } catch (e) {
+    const box = document.getElementById("errBox");
+    box.textContent = "加载失败：" + e.message + "（请检查 Gist ID / raw 地址配置）";
+    box.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    countdown = REFRESH_SEC;
+  }
+}
+
+async function detectVisitorIp() {
+  const sources = [
+    { url: "https://api-ipv4.ip.sb/ip", type: "text" },
+    { url: "https://ipv4.icanhazip.com", type: "text" },
+    { url: "https://ifconfig.me/ip", type: "text" }
+  ];
+  for (const s of sources) {
+    try {
+      const r = await fetch(s.url + "?t=" + Date.now(), { cache: "no-store" });
+      if (r.ok) {
+        const t = (await r.text()).trim();
+        if (t) { document.getElementById("visitorIp").textContent = t; return; }
+      }
+    } catch (e) { /* try next */ }
+  }
+  document.getElementById("visitorIp").textContent = "检测失败";
+}
+
+function tick() {
+  countdown--;
+  if (countdown <= 0) { countdown = REFRESH_SEC; refresh(false); }
+  document.getElementById("countdown").textContent = countdown + "s 后自动刷新";
+  // 相对时间每秒刷新
+  const t = document.getElementById("lastTime").textContent;
+  if (t && t !== "--") document.getElementById("relTime").textContent = relTime(t.replace(" ", "T"));
+}
+
+document.getElementById("homeIp").addEventListener("click", function () {
+  const ip = this.textContent;
+  if (!ip || ip === "--" || ip === "暂无数据") return;
+  (navigator.clipboard ? navigator.clipboard.writeText(ip) : Promise.reject())
+    .then(() => showToast("已复制：" + ip))
+    .catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = ip; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      showToast("已复制：" + ip);
+    });
+});
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1500);
+}
+function copyCmd() {
+  const cmd = document.getElementById("cliCmd").textContent;
+  (navigator.clipboard ? navigator.clipboard.writeText(cmd) : Promise.reject())
+    .then(() => showToast("命令已复制"))
+    .catch(() => showToast("复制失败，请手动选择复制"));
+}
+
+refresh(true);
+detectVisitorIp();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
