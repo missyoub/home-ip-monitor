@@ -60,6 +60,29 @@ iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c
 HOME_IP=$(curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt)
 ```
 
+### 查询访问者自己的公网 IP
+
+GitHub Pages 为纯静态托管，无法自建「回显访问者 IP」的接口，因此直接使用公共 IP 回显服务：
+
+```bash
+curl -s https://api-ipv4.ip.sb/ip        # 备选: ifconfig.me/ip、checkip.amazonaws.com、ipv4.icanhazip.com
+```
+
+返回「执行命令的设备」当前出口 IP（手机流量/公司宽带等），可与上面的家庭 IP 对比，判断自己当前是否在家庭网络内。如需自有域名的回显服务，可参考 [mpolden/echoip](https://github.com/mpolden/echoip)（ifconfig.co 同款开源实现）或部署一个 Cloudflare Worker。
+
+## 相关开源项目
+
+| 项目 | 星标 | 说明 |
+|------|------|------|
+| [jeessy2/ddns-go](https://github.com/jeessy2/ddns-go) | 17.4k | Go 编写，路由器/NAS 上运行，自动把新 IP 更新到阿里/腾讯/Cloudflare 等 DNS，带 Web UI |
+| [NewFuture/DDNS](https://github.com/NewFuture/DDNS) | 4.7k | 轻量 Python/跨平台 DDNS，适合 OpenWrt 定时任务，与本项目路由端思路最接近 |
+| [mpolden/echoip](https://github.com/mpolden/echoip) | 4.4k | 自建「访问者 IP 回显」服务（ifconfig.co 同款），Go 单二进制 |
+| [qdm12/ddns-updater](https://github.com/qdm12/ddns-updater) | 3.2k | 容器化 DDNS 更新器，支持 40+ DNS 服务商 |
+| [ddclient/ddclient](https://github.com/ddclient/ddclient) | 3.6k | 经典 Perl DDNS 客户端 |
+| [TimothyYe/godns](https://github.com/TimothyYe/godns) | 1.8k | Go DDNS 客户端，支持 DNSPod/阿里/华为云等 |
+
+**本项目与它们的差异**：上述 DDNS 工具是「IP → DNS 解析」思路（需要持有域名）；本项目是「IP → 可随时查看的页面/接口」思路（零域名、零后端、纯 GitHub 托管）。两者可互补：如果你有域名，推荐叠加 ddns-go 实现自动解析；无域名时本项目即可满足随时查看 IP 的需求。
+
 ## 页面功能
 
 - 大字号展示当前家庭公网 IP，点击即复制
