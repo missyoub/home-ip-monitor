@@ -82,7 +82,7 @@ fi
 # ---------- 2. 获取公网 IPv4（三源自动切换） ----------
 IP=""
 for u in $SOURCES; do
-  IP=$(fetch "$u" -4 | tr -d '[:space:]')
+  IP=$(fetch "$u" -4 | tr -d ' \t\n\r')
   case "$IP" in
     [0-9]*.[0-9]*.[0-9]*.[0-9]*) break ;;
     *) IP="" ;;
@@ -97,7 +97,7 @@ fi
 # ---------- 2b. 获取公网 IPv6（可能没有，不阻塞上报） ----------
 IP6=""
 for u in $V6SOURCES; do
-  IP6=$(fetch "$u" -6 | tr -d '[:space:]')
+  IP6=$(fetch "$u" -6 | tr -d ' \t\n\r')
   case "$IP6" in
     *:*) break ;;
     *) IP6="" ;;
