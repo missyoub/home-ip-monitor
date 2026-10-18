@@ -4,7 +4,7 @@
 # 用法：sh padavan-fix.sh ghp_你的token
 #   注意 b9eef32f878cf1829591bc338bf2a26c 是 Gist ID，不是 Token
 # ============================================================
-T="$1"
+T=$(printf '%s' "$1" | tr -d '[:space:]')
 case "$T" in
   ghp_*|gho_*|ghu_*|ghs_*|ghr_*|github_pat_*) ;;
   *) echo "!! Token 应以 ghp_ 开头（classic token），b9eef32f... 是 Gist ID"; exit 1 ;;
@@ -15,6 +15,18 @@ if [ $(printf '%s' "$T" | wc -c) -lt 38 ]; then
 fi
 
 curl --version >/dev/null 2>&1 || { echo "!! 本机无 curl，无法上报"; exit 1; }
+
+echo "---- 验证 Token ----"
+WHO=$(curl -k -sS -m 20 -w '\n%{http_code}' -H "Authorization: Bearer $T" \
+      -H "User-Agent: ip-report-setup" https://api.github.com/user 2>/dev/null)
+WCODE=$(printf '%s' "$WHO" | tail -n 1)
+if [ "$WCODE" != "200" ]; then
+  echo "!! Token 验证失败（HTTP $WCODE），GitHub 不接受这个 Token"
+  echo "   常见原因：没复制完整、已过期/被撤销、或复制成了别的字符串"
+  echo "   请重新生成：Settings -> Developer settings -> Tokens (classic) -> Generate new token"
+  exit 1
+fi
+echo "Token 有效，账号: $(printf '%s' "$WHO" | sed -n 's/.*"login": *"\([^"]*\)".*/\1/p' | head -1)"
 
 echo "---- 环境自检 ----"
 echo "curl  : $(curl --version 2>/dev/null | head -1)"
