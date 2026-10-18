@@ -46,8 +46,19 @@
    sh install-padavan.sh ghp_xxx
    ```
    OpenWrt 脚本会自动装 curl/ca-bundle/jq、写入 `/root/report-ip.sh`、试跑一次并配置每 10 分钟 cron；
-   Padavan 脚本写入 `/etc/storage/report-ip.sh`（重启不丢）并用 `cru` 建立定时任务，另需在
-   Web UI「系统管理 → 脚本 → 在路由器启动后执行」粘贴 `cru a reportip "*/10 * * * * /etc/storage/report-ip.sh >/dev/null 2>&1"`。
+   Padavan 脚本写入 `/etc/storage/report-ip.sh`（重启不丢），定时任务按 `cru` → crontab 文件 → Web UI 三级自动降级。
+
+   > Token 是 `ghp_` 开头的 40 位字符串。**Gist ID（`b9eef32f...`，32 位十六进制）不是 Token**，脚本会直接拒绝。
+
+## 常见问题（Padavan / 老固件）
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| 提示"本固件没有 curl"，但直接敲 `curl` 又能用 | 老 busybox 的 `ash` 没有 `command -v` 内建，检测恒为失败 | 脚本已改用 `curl --version` 检测 |
+| `curl: (77) Error reading ca cert file ... mbedTLS` | 固件缺 CA 证书，curl 无法校验证书 | 脚本自动回退 `-k`（跳过校验）重试，业务可用 |
+| `cru: not found` | 该固件裁掉了 cron 的 `cru` 封装 | 脚本改为直接写 `/etc/storage/cron/crontabs/` 并 `killall -HUP crond`；若系统管理里有「定时任务 / Crontab」标签，也可手动粘贴一行 |
+| 三项都没有 | 固件既无 cron 也无 crontab 目录 | 无法定时上报，改用 OpenWrt 那台（推荐主业） |
+| 上报失败 401 / 403 | Token 错误、过期或缺 `gist` 权限 | 重新生成 classic token，只勾 `gist` |
 
 ## 命令行查询
 
