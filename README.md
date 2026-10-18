@@ -24,7 +24,8 @@
 ├── website/index.html                  # 监控页面（部署到 GitHub Pages）
 ├── router/report-ip.sh                 # 上报脚本（OpenWrt/Padavan 通用，jq 可选）
 ├── router/install-openwrt.sh           # OpenWrt 一键安装
-├── router/install-padavan.sh           # Padavan 一键安装
+├── router/install-padavan.sh           # Padavan 一键安装（完整版，jq 可选）
+├── router/padavan-fix.sh               # Padavan 精简安装（无 jq/cru/CA 也能跑）
 └── .github/workflows/deploy-pages.yml  # GitHub Actions 自动部署
 ```
 
