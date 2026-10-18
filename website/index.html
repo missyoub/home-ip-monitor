@@ -64,6 +64,21 @@
     user-select: all;
   }
   .ip-value:hover { opacity: 0.8; }
+  .ip6-value {
+    font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 17px; font-weight: 600;
+    color: #0891b2;
+    cursor: pointer; word-break: break-all;
+    user-select: all; margin-top: 10px;
+  }
+  .ip6-value:hover { opacity: 0.8; }
+  .ip6-label {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    color: #fff; background: #0891b2;
+    border-radius: 4px; padding: 1px 6px; margin-right: 8px;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    vertical-align: 2px;
+  }
   .ip-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
   .meta-row {
     display: flex; justify-content: center; gap: 24px;
@@ -98,6 +113,7 @@
   }
   td { padding: 8px 6px; border-bottom: 1px solid #f3f4f6; }
   td.ip { font-family: Consolas, monospace; font-weight: 600; }
+  td.ip6 { font-family: Consolas, monospace; font-size: 11px; color: #0891b2; word-break: break-all; }
   tr.changed td.ip { color: var(--red); }
   tr.changed .chg { color: var(--red); font-size: 11px; font-weight: 700; margin-left: 6px; }
   .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
@@ -156,6 +172,7 @@
     </div>
     <div class="ip-box">
       <div class="ip-value" id="homeIp" title="点击复制">--</div>
+      <div class="ip6-value" id="homeIp6Box" title="点击复制"><span class="ip6-label">IPv6</span><span id="homeIp6">--</span></div>
       <div class="ip-hint">点击 IP 可复制</div>
     </div>
     <div class="meta-row">
@@ -172,6 +189,7 @@
   <div class="card">
     <div class="small-label">你当前访问本页使用的出口 IP（用于对比）</div>
     <div class="visitor-ip" id="visitorIp">检测中…</div>
+    <div class="visitor-ip" id="visitorIp6" style="font-size:13px;color:#0891b2;margin-top:8px;font-weight:600"></div>
   </div>
 
   <div class="card">
@@ -180,7 +198,7 @@
       <pre id="cliCmd" style="margin:0">curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</pre>
       <button class="copy-btn" onclick="copyCmd('cliCmd')">复制</button>
     </div>
-    <div class="ip-hint" style="margin-top:8px">PowerShell（Windows）：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>返回纯文本，可直接写进脚本变量</div>
+    <div class="ip-hint" style="margin-top:8px">PowerShell（Windows）：<code>iwr https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt</code><br>返回纯文本，可直接写进脚本变量<br>IPv6 纯文本：<code>curl -s https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip6.txt</code>（路由器无 IPv6 时返回 none）</div>
 
     <div class="small-label" style="margin-top:18px">命令行查询②：你自己（执行命令的设备）的公网 IP</div>
     <div style="position:relative">
@@ -305,6 +323,14 @@ function render(data) {
     return;
   }
   document.getElementById("homeIp").textContent = latest.ip;
+  const ip6el = document.getElementById("homeIp6");
+  if (typeof latest.ip6 === "string" && latest.ip6) {
+    ip6el.textContent = latest.ip6;
+  } else if (typeof latest.ip6 === "string" && latest.ip6 === "") {
+    ip6el.textContent = "无（路由器当前无 IPv6 网络）";
+  } else {
+    ip6el.textContent = "等待新版脚本上报（路由器脚本需更新到含 IPv6 的版本）";
+  }
   document.getElementById("lastTime").textContent = fmtTime(latest.time);
   document.getElementById("relTime").textContent = relTime(latest.time);
   const age = ageSeconds(latest.time);
@@ -324,11 +350,14 @@ function renderHistory(history) {
     box.innerHTML = '<div class="empty">暂无历史记录</div>';
     return;
   }
-  let html = '<table><thead><tr><th style="width:55%">时间</th><th>公网 IP</th></tr></thead><tbody>';
+  const has6 = history.some(h => h && h.ip6);
+  let html = '<table><thead><tr><th style="width:' + (has6 ? "34%" : "55%") + '">时间</th><th>IPv4</th>' +
+             (has6 ? '<th style="width:34%">IPv6</th>' : '') + '</tr></thead><tbody>';
   history.forEach((h, i) => {
     const changed = i > 0 && history[i - 1] && history[i - 1].ip !== h.ip;
     html += '<tr' + (changed ? ' class="changed"' : '') + '><td>' + fmtTime(h.time) +
-            '</td><td class="ip">' + h.ip + (changed ? '<span class="chg">已变更</span>' : '') + '</td></tr>';
+            '</td><td class="ip">' + h.ip + (changed ? '<span class="chg">已变更</span>' : '') + '</td>' +
+            (has6 ? '<td class="ip6">' + (h.ip6 || "—") + '</td>' : '') + '</tr>';
   });
   html += '</tbody></table>';
   box.innerHTML = html;
@@ -368,6 +397,21 @@ async function detectVisitorIp() {
   document.getElementById("visitorIp").textContent = "检测失败";
 }
 
+async function detectVisitorIp6() {
+  const el = document.getElementById("visitorIp6");
+  const sources = ["https://api-ipv6.ip.sb/ip", "https://ipv6.icanhazip.com"];
+  for (const u of sources) {
+    try {
+      const r = await fetch(u + "?t=" + Date.now(), { cache: "no-store" });
+      if (r.ok) {
+        const t = (await r.text()).trim();
+        if (t.includes(":")) { el.textContent = "IPv6：" + t; return; }
+      }
+    } catch (e) { /* try next */ }
+  }
+  el.textContent = "IPv6：未检测到（当前网络无 IPv6，或浏览器优先走了 IPv4）";
+}
+
 function tick() {
   countdown--;
   if (countdown <= 0) { countdown = REFRESH_SEC; refresh(false); }
@@ -380,6 +424,18 @@ function tick() {
 document.getElementById("homeIp").addEventListener("click", function () {
   const ip = this.textContent;
   if (!ip || ip === "--" || ip === "暂无数据") return;
+  (navigator.clipboard ? navigator.clipboard.writeText(ip) : Promise.reject())
+    .then(() => showToast("已复制：" + ip))
+    .catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = ip; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      showToast("已复制：" + ip);
+    });
+});
+document.getElementById("homeIp6Box").addEventListener("click", function () {
+  const ip = document.getElementById("homeIp6").textContent;
+  if (!ip || ip === "--" || ip.indexOf("（") >= 0 || ip.indexOf("等待") >= 0) return;
   (navigator.clipboard ? navigator.clipboard.writeText(ip) : Promise.reject())
     .then(() => showToast("已复制：" + ip))
     .catch(() => {
@@ -404,6 +460,7 @@ function copyCmd(id) {
 
 refresh(true);
 detectVisitorIp();
+detectVisitorIp6();
 setInterval(tick, 1000);
 </script>
 </body>
