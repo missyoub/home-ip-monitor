@@ -21,9 +21,10 @@
 ## 目录结构
 
 ```
-├── website/index.html              # 监控页面（部署到 GitHub Pages）
-├── router/report-ip.sh             # 路由器上报脚本（推荐，需 jq，含 100 条历史）
-├── router/report-ip-simple.sh      # 路由器上报脚本（精简版，无依赖，仅最新一条）
+├── website/index.html                  # 监控页面（部署到 GitHub Pages）
+├── router/report-ip.sh                 # 上报脚本（OpenWrt/Padavan 通用，jq 可选）
+├── router/install-openwrt.sh           # OpenWrt 一键安装
+├── router/install-padavan.sh           # Padavan 一键安装
 └── .github/workflows/deploy-pages.yml  # GitHub Actions 自动部署
 ```
 
@@ -37,11 +38,16 @@
    - 结构化数据（页面用）：`https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.json`
    - 纯文本（命令行用）：`https://gist.githubusercontent.com/missyoub/b9eef32f878cf1829591bc338bf2a26c/raw/ip.txt`
 5. **创建路由器专用 Token**：GitHub → Settings → Developer settings → Personal access tokens (classic)，仅勾选 `gist` 权限。
-6. 编辑 `router/report-ip.sh`（或 simple 版），填入 `GIST_ID` 和 `GH_TOKEN`，上传到路由器（如 `/root/report-ip.sh`）并 `chmod +x`。
-7. 路由器 crontab 添加（每 10 分钟上报一次）：
+6. 路由器上执行一键安装（把 `ghp_xxx` 换成上一步的 Token）：
+   ```sh
+   # OpenWrt
+   sh install-openwrt.sh ghp_xxx
+   # Padavan
+   sh install-padavan.sh ghp_xxx
    ```
-   */10 * * * * /root/report-ip.sh >/dev/null 2>&1
-   ```
+   OpenWrt 脚本会自动装 curl/ca-bundle/jq、写入 `/root/report-ip.sh`、试跑一次并配置每 10 分钟 cron；
+   Padavan 脚本写入 `/etc/storage/report-ip.sh`（重启不丢）并用 `cru` 建立定时任务，另需在
+   Web UI「系统管理 → 脚本 → 在路由器启动后执行」粘贴 `cru a reportip "*/10 * * * * /etc/storage/report-ip.sh >/dev/null 2>&1"`。
 
 ## 命令行查询
 
