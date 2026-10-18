@@ -51,8 +51,13 @@ cat > /etc/storage/report-ip.sh <<'EOS'
 #   2) CA 证书缺失时自动加 -k 重试（mbedTLS 版 curl 常见 error 77）
 # ============================================================
 
+# 用法1（安装器内嵌）: /root/report-ip.sh            （token 已写在下面）
+# 用法2（任意机器立即上报）: sh report-ip.sh ghp_你的token
+#   也可用管道: curl -kfsSL <raw地址> | sh -s ghp_你的token
+#   Windows Git Bash 需加 CURL_EXTRA: CURL_EXTRA=--ssl-no-revoke sh -s ghp_你的token
+GH_TOKEN="${1:-REPLACE_ME_TOKEN}"
+CURL_EXTRA="${CURL_EXTRA:-}"   # schannel 版 curl（Windows）需传 --ssl-no-revoke
 GIST_ID="b9eef32f878cf1829591bc338bf2a26c"
-GH_TOKEN="REPLACE_ME_TOKEN"
 API="https://api.github.com/gists/$GIST_ID"
 SOURCES="https://api-ipv4.ip.sb/ip https://ipv4.icanhazip.com https://checkip.amazonaws.com"
 V6SOURCES="https://api-ipv6.ip.sb/ip https://ipv6.icanhazip.com"
@@ -87,9 +92,9 @@ done
 # fetch <url> [curl 额外参数]：先按系统 CA 取，失败则 -k 重试（兼容 mbedTLS 无证书）
 fetch() {
   _u="$1"; shift
-  _out=$(curl $TLS_OPT "$@" -fsS --max-time 12 "$_u" 2>/dev/null)
+  _out=$(curl $TLS_OPT $CURL_EXTRA "$@" -fsS --max-time 12 "$_u" 2>/dev/null)
   if [ -z "$_out" ]; then
-    _out=$(curl -k "$@" -fsS --max-time 12 "$_u" 2>/dev/null)
+    _out=$(curl -k $CURL_EXTRA "$@" -fsS --max-time 12 "$_u" 2>/dev/null)
   fi
   printf '%s' "$_out"
 }
@@ -138,12 +143,12 @@ else
 fi
 
 # ---------- 5. 写回 Gist（同时取 HTTP 状态码，便于定位问题） ----------
-RAW=$(curl $TLS_OPT -sS --max-time 20 -X PATCH \
+RAW=$(curl $TLS_OPT $CURL_EXTRA -sS --max-time 20 -X PATCH \
   -H "Authorization: Bearer $GH_TOKEN" \
   -H "Content-Type: application/json" \
   -d @"$TMP" -w '\n%{http_code}' "$API" 2>/dev/null)
 if [ -z "$RAW" ]; then
-  RAW=$(curl -k -sS --max-time 20 -X PATCH \
+  RAW=$(curl -k $CURL_EXTRA -sS --max-time 20 -X PATCH \
     -H "Authorization: Bearer $GH_TOKEN" \
     -H "Content-Type: application/json" \
     -d @"$TMP" -w '\n%{http_code}' "$API" 2>/dev/null)
