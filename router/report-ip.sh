@@ -58,6 +58,21 @@ fetch() {
   printf '%s' "$_out"
 }
 
+# ---------- 1b. GitHub API 直连兜底（国内 DNS 污染/链路抖动） ----------
+# 用阿里公共 DNS 解析 api.github.com，拿到 IP 后用 --resolve 直连（绕过本机 DNS）
+GH_RESOLVE_OPT=""
+if command -v nslookup >/dev/null 2>&1; then
+  GHIP=$(nslookup api.github.com 223.5.5.5 2>/dev/null \
+        | sed -n 's/.*Address[ 0-9]*: \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\).*/\1/p' \
+        | grep -v '^223\.5\.5\.5$' | head -1)
+  case "$GHIP" in
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+      GH_RESOLVE_OPT="--resolve api.github.com:443:$GHIP"
+      echo "[ip-report] api.github.com -> $GHIP (公共DNS)"
+      ;;
+  esac
+fi
+
 # ---------- 2. 获取公网 IPv4（三源自动切换） ----------
 IP=""
 for u in $SOURCES; do
@@ -89,7 +104,7 @@ TMP="/tmp/ip-report.$$"
 
 # ---------- 4. 组装请求体 ----------
 if jq --version >/dev/null 2>&1; then
-  CUR=$(fetch "$API" -H "Authorization: Bearer $GH_TOKEN" \
+  CUR=$(fetch "$API" $GH_RESOLVE_OPT -H "Authorization: Bearer $GH_TOKEN" \
         | jq -r '.files["ip.json"].content // "{}"' 2>/dev/null)
   NEW=$(printf '%s' "$CUR" | jq -c --arg ip "$IP" --arg ip6 "$IP6" --arg t "$NOW" \
         '(.history // []) as $h | {latest:{ip:$ip,ip6:$ip6,time:$t}, history:([{ip:$ip,ip6:$ip6,time:$t}] + $h)[0:100]}' 2>/dev/null)
@@ -102,12 +117,12 @@ else
 fi
 
 # ---------- 5. 写回 Gist（同时取 HTTP 状态码，便于定位问题） ----------
-RAW=$(curl $TLS_OPT $CURL_EXTRA -sS --max-time 20 -X PATCH \
+RAW=$(curl $TLS_OPT $CURL_EXTRA $GH_RESOLVE_OPT -sS --max-time 20 -X PATCH \
   -H "Authorization: Bearer $GH_TOKEN" \
   -H "Content-Type: application/json" \
   -d @"$TMP" -w '\n%{http_code}' "$API" 2>/dev/null)
 if [ -z "$RAW" ]; then
-  RAW=$(curl -k $CURL_EXTRA -sS --max-time 20 -X PATCH \
+  RAW=$(curl -k $CURL_EXTRA $GH_RESOLVE_OPT -sS --max-time 20 -X PATCH \
     -H "Authorization: Bearer $GH_TOKEN" \
     -H "Content-Type: application/json" \
     -d @"$TMP" -w '\n%{http_code}' "$API" 2>/dev/null)
@@ -142,6 +157,10 @@ case "$CODE" in
     ;;
   *)
     echo "[ip-report] 上报失败 (HTTP ${CODE:-无响应})"
+    if [ "$CODE" = "000" ] || [ -z "$CODE" ]; then
+      echo "[ip-report] 000 = 未能连接 api.github.com（DNS 污染或链路阻断）"
+      echo "[ip-report] 可手动测试: nslookup api.github.com 223.5.5.5"
+    fi
     [ -n "$BODY" ] && echo "[ip-report] 响应: $(printf '%s' "$BODY" | cut -c1-160)"
     logger -t ip-report "上报失败 HTTP $CODE" 2>/dev/null || true
     exit 1
