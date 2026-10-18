@@ -58,19 +58,25 @@ fetch() {
   printf '%s' "$_out"
 }
 
-# ---------- 1b. GitHub API 直连兜底（国内 DNS 污染/链路抖动） ----------
-# 用阿里公共 DNS 解析 api.github.com，拿到 IP 后用 --resolve 直连（绕过本机 DNS）
+# ---------- 1b. GitHub API 直连兜底（国内 DNS 污染 / TCP 阻断） ----------
+# 注意：不能用 command -v（老 busybox ash 没这个内建，会误判），直接尝试 nslookup
+# 流程：阿里 DNS 解析出候选 IP + 内置备选 IP -> 逐个探测 /zen（6 秒超时）-> 用第一个通的
 GH_RESOLVE_OPT=""
-if command -v nslookup >/dev/null 2>&1; then
-  GHIP=$(nslookup api.github.com 223.5.5.5 2>/dev/null \
-        | sed -n 's/.*Address[ 0-9]*: \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\).*/\1/p' \
-        | grep -v '^223\.5\.5\.5$' | head -1)
-  case "$GHIP" in
-    [0-9]*.[0-9]*.[0-9]*.[0-9]*)
-      GH_RESOLVE_OPT="--resolve api.github.com:443:$GHIP"
-      echo "[ip-report] api.github.com -> $GHIP (公共DNS)"
-      ;;
-  esac
+GHIPS=$(nslookup api.github.com 223.5.5.5 2>/dev/null \
+      | sed -n 's/.*Address[ 0-9]*: \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\).*/\1/p' \
+      | grep -v '^223\.5\.5\.5$')
+GHIPS="$GHIPS 20.205.243.168 140.82.121.6 140.82.116.3"
+for g in $GHIPS; do
+  _code=$(curl -k -4 $CURL_EXTRA -s --max-time 6 --resolve "api.github.com:443:$g" \
+          -o /dev/null -w '%{http_code}' https://api.github.com/zen 2>/dev/null)
+  if [ "$_code" = "200" ]; then
+    GH_RESOLVE_OPT="--resolve api.github.com:443:$g"
+    echo "[ip-report] api.github.com 可达节点: $g"
+    break
+  fi
+done
+if [ -z "$GH_RESOLVE_OPT" ]; then
+  echo "[ip-report] !! 所有 api.github.com 候选节点均不可达（TCP 层被阻断），本次上报将失败"
 fi
 
 # ---------- 2. 获取公网 IPv4（三源自动切换） ----------
