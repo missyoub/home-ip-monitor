@@ -44,6 +44,7 @@ GIST_ID="b9eef32f878cf1829591bc338bf2a26c"
 GH_TOKEN="REPLACE_ME_TOKEN"
 API="https://api.github.com/gists/$GIST_ID"
 SOURCES="https://api-ipv4.ip.sb/ip https://ipv4.icanhazip.com https://checkip.amazonaws.com"
+V6SOURCES="https://api-ipv6.ip.sb/ip https://ipv6.icanhazip.com"
 
 # ---------- 0. 依赖与 Token 检查 ----------
 curl --version >/dev/null 2>&1 || {
@@ -97,6 +98,16 @@ if [ -z "$IP" ]; then
   exit 1
 fi
 
+# ---------- 2b. 获取公网 IPv6（可能没有，不阻塞上报） ----------
+IP6=""
+for u in $V6SOURCES; do
+  IP6=$(fetch "$u" -6 | tr -d '[:space:]')
+  case "$IP6" in
+    *:*) break ;;
+    *) IP6="" ;;
+  esac
+done
+
 # ---------- 3. 北京时间（TZ=UTC-8 不依赖 tzdata） ----------
 NOW=$(TZ=UTC-8 date '+%Y-%m-%d %H:%M:%S')
 TMP="/tmp/ip-report.$$"
@@ -105,13 +116,14 @@ TMP="/tmp/ip-report.$$"
 if jq --version >/dev/null 2>&1; then
   CUR=$(fetch "$API" -H "Authorization: Bearer $GH_TOKEN" \
         | jq -r '.files["ip.json"].content // "{}"' 2>/dev/null)
-  NEW=$(printf '%s' "$CUR" | jq -c --arg ip "$IP" --arg t "$NOW" \
-        '(.history // []) as $h | {latest:{ip:$ip,time:$t}, history:([{ip:$ip,time:$t}] + $h)[0:100]}' 2>/dev/null)
-  [ -z "$NEW" ] && NEW="{\"latest\":{\"ip\":\"$IP\",\"time\":\"$NOW\"},\"history\":[{\"ip\":\"$IP\",\"time\":\"$NOW\"}]}"
-  jq -n --arg c "$NEW" --arg ip "$IP" '{files:{"ip.json":{content:$c},"ip.txt":{content:$ip}}}' > "$TMP"
+  NEW=$(printf '%s' "$CUR" | jq -c --arg ip "$IP" --arg ip6 "$IP6" --arg t "$NOW" \
+        '(.history // []) as $h | {latest:{ip:$ip,ip6:$ip6,time:$t}, history:([{ip:$ip,ip6:$ip6,time:$t}] + $h)[0:100]}' 2>/dev/null)
+  [ -z "$NEW" ] && NEW="{\"latest\":{\"ip\":\"$IP\",\"ip6\":\"$IP6\",\"time\":\"$NOW\"},\"history\":[{\"ip\":\"$IP\",\"ip6\":\"$IP6\",\"time\":\"$NOW\"}]}"
+  jq -n --arg c "$NEW" --arg ip "$IP" --arg ip6 "${IP6:-none}" \
+    '{files:{"ip.json":{content:$c},"ip.txt":{content:$ip},"ip6.txt":{content:$ip6}}}' > "$TMP"
 else
-  printf '{"files":{"ip.json":{"content":"{\\"latest\\":{\\"ip\\":\\"%s\\",\\"time\\":\\"%s\\"},\\"history\\":[{\\"ip\\":\\"%s\\",\\"time\\":\\"%s\\"}]}"},"ip.txt":{"content":"%s"}}}' \
-    "$IP" "$NOW" "$IP" "$NOW" "$IP" > "$TMP"
+  printf '{"files":{"ip.json":{"content":"{\\"latest\\":{\\"ip\\":\\"%s\\",\\"ip6\\":\\"%s\\",\\"time\\":\\"%s\\"},\\"history\\":[{\\"ip\\":\\"%s\\",\\"ip6\\":\\"%s\\",\\"time\\":\\"%s\\"}]}"},"ip.txt":{"content":"%s"},"ip6.txt":{"content":"%s"}}}' \
+    "$IP" "$IP6" "$NOW" "$IP" "$IP6" "$NOW" "$IP" "${IP6:-none}" > "$TMP"
 fi
 
 # ---------- 5. 写回 Gist（同时取 HTTP 状态码，便于定位问题） ----------
@@ -132,6 +144,11 @@ BODY=$(printf '%s' "$RAW" | sed '$d')
 case "$CODE" in
   200)
     echo "[ip-report] 上报成功: $IP @ $NOW"
+    if [ -n "$IP6" ]; then
+      echo "[ip-report] IPv6: $IP6"
+    else
+      echo "[ip-report] IPv6: 未获取到（路由器当前无 IPv6 网络，不影响上报）"
+    fi
     logger -t ip-report "上报成功: $IP" 2>/dev/null || true
     exit 0
     ;;
