@@ -1,58 +1,71 @@
 #!/bin/sh
 # ============================================================
-# 家庭公网 IP 上报脚本（推荐版，需 jq：opkg install jq / ipkg install jq）
-# 原理：获取本机出口 IPv4 -> 写入 GitHub Gist（保留最近 100 条历史）
-# 用法：修改下方 GIST_ID / GH_TOKEN 后，加入 crontab 定时执行
+# 家庭公网 IP 上报脚本（OpenWrt / Padavan 通用，jq 可选）
+#   - 有 jq：保留最近 100 条历史
+#   - 无 jq：只保留最新一条（页面显示同样正常）
+#   - 同时更新 ip.json（页面用）与 ip.txt（命令行查询用）
+# GIST_ID 已预置，只有 GH_TOKEN 需要在安装时替换
 # ============================================================
 
-# ====== 配置区 ======
-GIST_ID="REPLACE_WITH_GIST_ID"
-GH_TOKEN="REPLACE_WITH_GIST_ONLY_TOKEN"   # 仅需 gist 权限的 classic token
-MAX_HISTORY=100
-IP_SOURCES="https://api-ipv4.ip.sb/ip https://ipv4.icanhazip.com https://ifconfig.me/ip"
-# ===================
-
+GIST_ID="b9eef32f878cf1829591bc338bf2a26c"
+GH_TOKEN="REPLACE_ME_TOKEN"
 API="https://api.github.com/gists/$GIST_ID"
+SOURCES="https://api-ipv4.ip.sb/ip https://ipv4.icanhazip.com https://checkip.amazonaws.com"
 
-# 1. 获取公网 IPv4（依次尝试多个源，全是 IPv4-only 端点）
+# 0. 依赖检查
+if ! command -v curl >/dev/null 2>&1; then
+  echo "[ip-report] 缺少 curl，无法上报（请安装 curl 或用 OpenWrt 那台）"
+  exit 1
+fi
+
+# 1. 获取公网 IPv4（三源自动切换，均为 IPv4-only 端点）
 IP=""
-for url in $IP_SOURCES; do
-  IP=$(curl -4 -s --max-time 10 "$url" | tr -d '[:space:]')
+for u in $SOURCES; do
+  IP=$(curl -4 -fsS --max-time 10 "$u" 2>/dev/null | tr -d '[:space:]')
   case "$IP" in
     [0-9]*.[0-9]*.[0-9]*.[0-9]*) break ;;
     *) IP="" ;;
   esac
 done
 if [ -z "$IP" ]; then
-  echo "[report-ip] 获取公网 IP 失败"
+  echo "[ip-report] 获取公网 IP 失败"
+  logger -t ip-report "获取公网 IP 失败" 2>/dev/null
   exit 1
 fi
 
-# 2. 当前时间（北京时间）
-NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+# 2. 北京时间（TZ=UTC-8 不依赖 tzdata，各固件通用）
+NOW=$(TZ=UTC-8 date '+%Y-%m-%d %H:%M:%S')
+TMP="/tmp/ip-report.$$"
 
-# 3. 读取 Gist 当前内容
-CUR=$(curl -s --max-time 15 -H "Authorization: Bearer $GH_TOKEN" "$API" \
-  | jq -r '.files["ip.json"].content // "{}"')
+# 3. 组装请求体
+if command -v jq >/dev/null 2>&1; then
+  CUR=$(curl -fsS --max-time 15 -H "Authorization: Bearer $GH_TOKEN" "$API" 2>/dev/null \
+        | jq -r '.files["ip.json"].content // "{}"' 2>/dev/null)
+  NEW=$(printf '%s' "$CUR" | jq -c --arg ip "$IP" --arg t "$NOW" \
+        '(.history // []) as $h | {latest:{ip:$ip,time:$t}, history:([{ip:$ip,time:$t}] + $h)[0:100]}' 2>/dev/null)
+  [ -z "$NEW" ] && NEW="{\"latest\":{\"ip\":\"$IP\",\"time\":\"$NOW\"},\"history\":[{\"ip\":\"$IP\",\"time\":\"$NOW\"}]}"
+  jq -n --arg c "$NEW" --arg ip "$IP" '{files:{"ip.json":{content:$c},"ip.txt":{content:$ip}}}' > "$TMP"
+else
+  printf '{"files":{"ip.json":{"content":"{\\"latest\\":{\\"ip\\":\\"%s\\",\\"time\\":\\"%s\\"},\\"history\\":[{\\"ip\\":\\"%s\\",\\"time\\":\\"%s\\"}]}"},"ip.txt":{"content":"%s"}}}' \
+    "$IP" "$NOW" "$IP" "$NOW" "$IP" > "$TMP"
+fi
 
-# 4. 组装新内容：latest 置顶，历史 prepend 并截断
-NEW_ENTRY=$(jq -nc --arg ip "$IP" --arg t "$NOW" '{ip:$ip, time:$t}')
-NEW_CONTENT=$(printf '%s' "$CUR" | jq -c --argjson e "$NEW_ENTRY" --argjson m "$MAX_HISTORY" \
-  '(.history // []) as $h | {latest: $e, history: ([$e] + $h)[0:$m]}')
-
-# 5. 写回 Gist（同时更新 ip.json 结构化数据 + ip.txt 纯文本供命令行查询）
-TMP=$(mktemp)
-jq -n --arg c "$NEW_CONTENT" --arg ip "$IP" \
-  '{files:{"ip.json":{content:$c},"ip.txt":{content:$ip}}}' > "$TMP"
-RESULT=$(curl -s --max-time 20 -X PATCH \
+# 4. 写回 Gist
+RESULT=$(curl -fsS --max-time 20 -X PATCH \
   -H "Authorization: Bearer $GH_TOKEN" \
   -H "Content-Type: application/json" \
-  -d @"$TMP" "$API")
+  -d @"$TMP" "$API" 2>/dev/null)
 rm -f "$TMP"
 
-if echo "$RESULT" | jq -e '.id' >/dev/null 2>&1; then
-  echo "[report-ip] 上报成功: $IP @ $NOW"
-else
-  echo "[report-ip] 上报失败: $RESULT"
-  exit 1
-fi
+case "$RESULT" in
+  *'"id"'*)
+    echo "[ip-report] 上报成功: $IP @ $NOW"
+    logger -t ip-report "上报成功: $IP" 2>/dev/null || true
+    exit 0
+    ;;
+  *)
+    echo "[ip-report] 上报失败，响应: $RESULT"
+    logger -t ip-report "上报失败" 2>/dev/null || true
+    exit 1
+    ;;
+esac
