@@ -123,19 +123,25 @@ else
 fi
 
 # ---------- 5. 写回 Gist（同时取 HTTP 状态码，便于定位问题） ----------
-RAW=$(curl $TLS_OPT $CURL_EXTRA $GH_RESOLVE_OPT -sS --max-time 20 -X PATCH \
-  -H "Authorization: Bearer $GH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d @"$TMP" -w '\n%{http_code}' "$API" 2>/dev/null)
-if [ -z "$RAW" ]; then
-  RAW=$(curl -k $CURL_EXTRA $GH_RESOLVE_OPT -sS --max-time 20 -X PATCH \
+# 注意：curl 的 -w 在连接失败时也会输出 "000"，所以不能靠 RAW 是否为空判断失败，
+#       必须看状态码本身；只有状态码为 000/空时才用 -k 兜底重试
+ERRF="/tmp/ip-report-err.$$"
+do_patch() {
+  curl "$@" -4 -sS --max-time 20 -X PATCH \
     -H "Authorization: Bearer $GH_TOKEN" \
     -H "Content-Type: application/json" \
-    -d @"$TMP" -w '\n%{http_code}' "$API" 2>/dev/null)
+    -d @"$TMP" -w '\n%{http_code}' "$API" 2>"$ERRF"
+}
+RAW=$(do_patch $TLS_OPT $CURL_EXTRA $GH_RESOLVE_OPT)
+CODE=$(printf '%s' "$RAW" | tail -n 1)
+if [ -z "$RAW" ] || [ "$CODE" = "000" ]; then
+  RAW=$(do_patch -k $CURL_EXTRA $GH_RESOLVE_OPT)
+  CODE=$(printf '%s' "$RAW" | tail -n 1)
 fi
 rm -f "$TMP"
-CODE=$(printf '%s' "$RAW" | tail -n 1)
 BODY=$(printf '%s' "$RAW" | sed '$d')
+CURLERR=$(head -n 2 "$ERRF" 2>/dev/null)
+rm -f "$ERRF"
 
 case "$CODE" in
   200)
@@ -165,6 +171,7 @@ case "$CODE" in
     echo "[ip-report] 上报失败 (HTTP ${CODE:-无响应})"
     if [ "$CODE" = "000" ] || [ -z "$CODE" ]; then
       echo "[ip-report] 000 = 未能连接 api.github.com（DNS 污染或链路阻断）"
+      [ -n "$CURLERR" ] && echo "[ip-report] curl 详情: $CURLERR"
       echo "[ip-report] 可手动测试: nslookup api.github.com 223.5.5.5"
     fi
     [ -n "$BODY" ] && echo "[ip-report] 响应: $(printf '%s' "$BODY" | cut -c1-160)"
